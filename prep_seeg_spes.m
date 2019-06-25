@@ -11,7 +11,7 @@ ft_defaults
 %% load seeg with SPES from 1 patients
 
 dataPath = '/Fridge/CCEP';
-sub_labels = { 'RESP0773'};
+sub_labels = {'RESP0773'};
 ses_label = '1';
 task_label = 'SPESclin';
 
@@ -19,109 +19,181 @@ i=1;
 D = dir(fullfile(dataPath,['sub-' sub_labels{i}],['ses-' ses_label],'ieeg',...
     ['sub-' sub_labels{i} '_ses-' ses_label '_task-' task_label ,'_run-*_ieeg.eeg']));
 
-dataName = fullfile(D(1).folder, D(1).name);
+dataFName = fullfile(D(1).folder, D(1).name);
 
-ccep_data = ft_read_data(dataName,'dataformat','brainvision_eeg');
-ccep_header = ft_read_header(dataName);
+ccep_dataraw = ft_read_data(dataFName,'dataformat','brainvision_eeg');
+
+ccep_header = ft_read_header(dataFName);
+fs = ccep_header.Fs;
 
 % load events
 D = dir(fullfile(dataPath,['sub-' sub_labels{i}],['ses-' ses_label],'ieeg',...
     ['sub-' sub_labels{i} '_ses-' ses_label '_task-' task_label ,'_run-*_events.tsv']));
 
-eventsName = fullfile(D(1).folder, D(1).name);
+eventsFName = fullfile(D(1).folder, D(1).name);
 
-cc_events = readtable(eventsName,'FileType','text','Delimiter','\t');
+tb_events = readtable(eventsFName,'FileType','text','Delimiter','\t');
 
 % load channels
 D = dir(fullfile(dataPath,['sub-' sub_labels{i}],['ses-' ses_label],'ieeg',...
     ['sub-' sub_labels{i} '_ses-' ses_label '_task-' task_label ,'_run-*_channels.tsv']));
 
-channelsName = fullfile(D(1).folder, D(1).name);
+channelsFName = fullfile(D(1).folder, D(1).name);
 
-cc_channels = readtable(channelsName,'FileType','text','Delimiter','\t');
-channels_incl = strcmp(cc_channels.status_description,'included');
+tb_channels = readtable(channelsFName,'FileType','text','Delimiter','\t');
+ch = tb_channels.name;
 
-data = ccep_data(channels_incl,:);
-ch = cc_channels.name(channels_incl);
+% remove all unnecessary electrodes
+log_ch_incl = strcmp(tb_channels.status_description,'included');
+ch_incl = tb_channels.name(log_ch_incl);
+
+ccep_data = ccep_dataraw(log_ch_incl,:);
+
+% put all information to use in one struct called "pat"
+pat(i).dataFName = dataFName;
+pat(i).RESPnum = sub_labels{:};
+pat(i).ch = ch_incl;
+pat(i).fs = fs;
+pat(i).ccep_data = ccep_data;
+pat(i).sample_start = tb_events.sample_start(strcmp(tb_events.sub_type,'SPES')==1);
+
+% remove all irrelevant variables
+clearvars -except pat tb_events tb_channels
+
+%% find unique stimulation pairs and stimulus current
+
+all_stimcur = str2double(tb_events.electrical_stimulation_current)*1000;
+all_stimchans = tb_events.electrical_stimulation_site(~isnan(all_stimcur));
+all_stimcur = all_stimcur(~isnan(all_stimcur));
+
+% convert stimulus pairs numbers to numbers without unnecessary channels
+stimelecnum = NaN(size(all_stimchans,1),2);
+for stimp =1:size(all_stimchans,1)
+    stimsplit = strsplit(all_stimchans{stimp},'-');
+    for elec = 1:size(stimsplit,2)
+       stimelecnum(stimp,elec) = find(strcmp(pat(1).ch,stimsplit{elec}));
+    end
+end
+
+% get the unique number of stimulated pairs:
+ % use [sort(stimelecnum,2) allstimcur] if you do not want to differentiate direction (positive/negative) of stimulation; 
+ % use [stimelecnum, allstimcur] if you want to differentiate positive and negative stimulation
+stimelecs = [stimelecnum, all_stimcur];
+[cc_stimsets,IA,IC] = unique(stimelecs,'rows');
+
+% number of stimuli in each trial
+n = histcounts(IC,'BinMethod','integers');
+if any(diff(n) ~=0)
+    disp('Not all stimulations have been repeated with the same number of stimuli')
+end
+
+pat(1).all_stimchans = all_stimchans;
+pat(1).all_stimcur = all_stimcur;
+pat(1).cc_stimsets = cc_stimsets;
+pat(1).IC = IC;
+pat(1).stimnum_max = max(n);
+
+% remove all irrelevant variables
+clearvars -except pat tb_events tb_channels
 
 %% epoch files in 2spre-2spost stimulus 
 epoch_length = 4; % in seconds, -2:2
 epoch_prestim = 2;
-fs = ccep_header.Fs;
-
-stimevent = (strcmp(cc_events.trial_type,'electrical_stimulation'));
-stim1mA = double(strcmp(cc_events.electrical_stimulation_current,'0.001'));
-stim2mA = double(strcmp(cc_events.electrical_stimulation_current,'0.002'));
-stimcur = stim1mA + 2*stim2mA ;
-stimchans = cc_events.electrical_stimulation_site(stimevent);
-data_epoch = zeros(size(data,1),sum(stimevent(:,1)),round(epoch_length*fs));
+fs = pat(1).fs;
+data_epoch = zeros(size(pat(1).ch,1),size(pat(1).all_stimchans,1),round(epoch_length*fs)); % preallocation: [number of stimuli x epoch length]
 
 tt = (1/fs:1/fs:epoch_length) - epoch_prestim;
 
-for elec = 1:size(data,1) % for all channels
-    n=1;
-    for ll = 1:sum(stimevent) % for all epochs
-        stimnum = find(stimevent ==1);
-        data_epoch(elec,n,:) = data(elec,cc_events.sample_start(stimnum(ll))-round(epoch_prestim*fs)+1:cc_events.sample_start(stimnum(ll))+round((epoch_length-epoch_prestim)*fs));
-        n=n+1;
+for elec = 1:size(pat(1).ch,1) % for all channels
+    for ll = 1:size(pat(1).all_stimchans,1) % for all single stimulations
+        data_epoch(elec,ll,:) = pat(1).ccep_data(elec,pat(1).sample_start(ll)-round(epoch_prestim*fs)+1:pat(1).sample_start(ll)+round((epoch_length-epoch_prestim)*fs));                
     end
 end
 
+pat(1).epoch_prestim = epoch_prestim;
+pat(1).data_epoch = data_epoch;
+pat(1).tt = tt;
+
+clearvars -except pat tb_events tb_channels
+
+
 %% Make figures for specific epoch
 elec = 35;
-trial = 24;
+trial = 24; % this is in systemplus also the triggernumber-1000
+data_epoch = pat(1).data_epoch;
+ch_incl = pat(1).ch;
+all_stimchans = pat(1).all_stimchans;
+tt= pat(1).tt;
+
 figure(1)
-plot(tt,squeeze(data_epoch(elec,trial,:)))
+plot(tt,squeeze(-1*data_epoch(elec,trial,:)))
 xlabel('time(s)')
 ylabel('amplitude(uV)')
-title(sprintf('Electrode %s, stimulating %s',ch{elec},stimchans{trial}))
+title(sprintf('Electrode %s, stimulating %s, %d mA',ch_incl{elec},all_stimchans{trial},pat(1).all_stimcur(trial)))
+ylim([-800 800])
 
-%% average epochs with same stimulation site
+clearvars -except pat tb_events tb_channels
 
-% get the unique number of stimulated pairs:
-stimelec = cc_events.electrical_stimulation_site_num(stimevent);
-stimnums = cell2mat(cellfun(@str2num, stimelec,'UniformOutput',false));
-stimelecs = [sort(stimnums,2) stimcur(stimcur~=0)];
-[cc_stimsets,IA,IC] = unique(stimelecs,'rows');
-
-% number of stimuli in each trial
-n = histcounts(IC,'BinWidth',0.99);
-if any(diff(n) ~=0)
-    disp('Not all stimulations are done the same time')
-end
 
 %% Averaging epochs
-max_stim = max(n);
 
-cc_epoch_sorted = NaN(size(data_epoch,1),max_stim,size(cc_stimsets,1),size(data_epoch,3));
+cc_epoch_sorted = NaN(size(pat(1).data_epoch,1),pat(1).stimnum_max,size(pat(1).cc_stimsets,1),size(pat(1).data_epoch,3));
+cc_stimchans = cell(size(pat(1).cc_stimsets,1),1);
 
-for yy = 1: size(cc_stimsets,1)
-    events = find(yy==IC);
+data_epoch = pat(1).data_epoch;
+
+for yy = 1: size(pat(1).cc_stimsets,1)
+    events = find(yy==pat(1).IC); % find where the sorted stim channels are really stimulated
     nr_events = length(events);
     
-    cc_epoch_sorted(:,1:nr_events,yy,:) = data_epoch(:,events,:);
+    cc_epoch_sorted(:,1:nr_events,yy,:) = data_epoch(:,events,:); % [channels,stimulus1-10,trials,time]
+    cc_stimchans{yy,1} = pat(1).all_stimchans{events(1)};
 end
 cc_epoch_sorted_avg = squeeze(nanmean(cc_epoch_sorted,2));
 
+pat(1).epoch_sorted = cc_epoch_sorted;
+pat(1).epoch_sorted_avg = cc_epoch_sorted_avg;
+pat(1).cc_stimchans = cc_stimchans;
+
+clearvars -except pat tb_events tb_channels
+
+
 %% plot avg epoch
-trial = 1;
+trial = 54;
 elec = 3;
 
+epoch_sorted = pat(1).epoch_sorted;
+epoch_sorted_avg = pat(1).epoch_sorted_avg;
+ch = pat(1).ch;
+stimnames = pat(1).cc_stimchans;
+stimsets = pat(1).cc_stimsets;
+tt = pat(1).tt;
+
 figure(1),
-plot(tt,squeeze(cc_epoch_sorted(elec,:,trial,:)));
+plot(tt,squeeze(epoch_sorted(elec,:,trial,:)));
 hold on
-plot(tt,squeeze(cc_epoch_sorted_avg(elec,trial,:)),'linewidth',2);
+plot(tt,squeeze(epoch_sorted_avg(elec,trial,:)),'linewidth',2);
 hold off
 xlabel('time(s)')
 ylabel('amplitude(uV)')
-title(sprintf('Electrode %s, stimulating %s-%s, %d mA',ch{elec},ch{cc_stimsets(trial,1:2)},cc_stimsets(trial,3)))
+title(sprintf('Electrode %s, stimulating %s, %1.1f mA',ch{elec},stimnames{trial},stimsets(trial,3)))
+ylim([-800 800])
+
+clearvars -except pat tb_events tb_channels
 
 %% visually score ERs
 
-ERs = rate_visERssEEG(tt,cc_epoch_sorted,cc_epoch_sorted_avg,ch,cc_stimsets);
+start_rating = 1;
+stop_rating = size(epoch_sorted_avg,2);
+
+pat(1).visERs = rate_visERssEEG(pat,start_rating,stop_rating);
+
+clearvars -except pat tb_events tb_channels
+
 
 %% detect ERs
 
-ERs = detectERssEEG(cc_epoch_sorted_avg,cc_stimsets, fs, epoch_prestim);
+pat(1).detERs = detectERssEEG(pat);
 
+clearvars -except pat tb_events tb_channels
 

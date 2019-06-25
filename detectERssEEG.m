@@ -4,7 +4,12 @@
 % this function detects early responses after Single Pulse Electrical Stimulation
 % this function should be adapted to be used in sEEG
 
-function ERs = detectERssEEG(cc_epoch_sorted_avg, cc_stimsets,fs, epoch_prestim)
+function ERs = detectERssEEG(pat)
+
+epoch_sorted_avg = pat(1).epoch_sorted_avg;
+cc_stimsets = pat(1).cc_stimsets;
+fs = pat(1).fs;
+epoch_prestim = pat(1).epoch_prestim;
 
 % pre-allocation: variables determined in my thesis
 thresh = 2.5;
@@ -16,13 +21,13 @@ SD = [];
 % extrasamps = 20; % after the stimulus artefact, no data can be read in 20 samples (with 2048Hz)
 extrasamps = round(20/2048*fs); %DvB: I'm not sure whether this is correct... should check!
 
-for trial = 1:size(cc_epoch_sorted_avg,2)
+for trial = 1:size(epoch_sorted_avg,2)
     
     detERs = [];
     
-    for elec=1:size(cc_epoch_sorted_avg,1) % for each electrode
+    for elec=1:size(epoch_sorted_avg,1) % for each electrode
         
-        seep = squeeze(cc_epoch_sorted_avg(elec,trial,:))';
+        seep = squeeze(epoch_sorted_avg(elec,trial,:))';
         
         % determine median en sd
         smepmediantotal = median(seep);
@@ -115,6 +120,8 @@ for trial = 1:size(cc_epoch_sorted_avg,2)
         Amplitude(elec) = ampl;
     end
     
+    ERs(trial).stimpair = cc_stimsets(trial,1:2);
+    ERs(trial).stimcur = cc_stimsets(trial,3);
     ERs(trial).detERs = detERs; % ERs for all stimulation pairs
     
 end
