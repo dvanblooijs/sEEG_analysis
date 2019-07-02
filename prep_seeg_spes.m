@@ -41,14 +41,13 @@ D = dir(fullfile(dataPath,['sub-' sub_labels{i}],['ses-' ses_label],'ieeg',...
 channelsFName = fullfile(D(1).folder, D(1).name);
 
 tb_channels = readtable(channelsFName,'FileType','text','Delimiter','\t');
-ch = tb_channels.name;
+% ch = tb_channels.name;
 
 % remove all unnecessary electrodes
 log_ch_incl = strcmp(tb_channels.status_description,'included');
 ch_incl = tb_channels.name(log_ch_incl);
 
-ccep_data = ccep_dataraw(log_ch_incl,:);
-
+ccep_data = -1*ccep_dataraw(log_ch_incl,:); %*-1 because that's how the ECoG is displayed and visualized
 % put all information to use in one struct called "pat"
 pat(i).dataFName = dataFName;
 pat(i).RESPnum = sub_labels{:};
@@ -126,11 +125,11 @@ all_stimchans = pat(1).all_stimchans;
 tt= pat(1).tt;
 
 figure(1)
-plot(tt,squeeze(-1*data_epoch(elec,trial,:)))
+plot(tt,squeeze(data_epoch(elec,trial,:)))
 xlabel('time(s)')
 ylabel('amplitude(uV)')
 title(sprintf('Electrode %s, stimulating %s, %d mA',ch_incl{elec},all_stimchans{trial},pat(1).all_stimcur(trial)))
-ylim([-800 800])
+ylim([-1600 1600])
 
 clearvars -except pat tb_events tb_channels
 
@@ -172,7 +171,7 @@ tt = pat(1).tt;
 figure(1),
 plot(tt,squeeze(epoch_sorted(elec,:,trial,:)));
 hold on
-plot(tt,squeeze(epoch_sorted_avg(elec,trial,:)),'linewidth',2);
+plot(tt,squeeze(epoch_sorted_avg(elec,trial,:)),'k','linewidth',2);
 hold off
 xlabel('time(s)')
 ylabel('amplitude(uV)')
@@ -183,12 +182,15 @@ clearvars -except pat tb_events tb_channels
 
 %% visually score ERs
 
-start_rating = 1;
-stop_rating = size(epoch_sorted_avg,2);
+start_rating = 77;%1;
+stop_rating = size(pat(1).epoch_sorted_avg,2);
 
-pat(1).visERs = rate_visERssEEG(pat,start_rating,stop_rating);
+for trial=start_rating:stop_rating
+    visERs = rate_visERssEEG(pat,trial);
+    pat(1).visERs(trial) = visERs;
+end
 
-clearvars -except pat tb_events tb_channels
+% clearvars -except pat tb_events tb_channels
 
 
 %% detect ERs
