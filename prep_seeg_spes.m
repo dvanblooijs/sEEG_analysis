@@ -19,7 +19,14 @@ i=1;
 D = dir(fullfile(dataPath,['sub-' sub_labels{i}],['ses-' ses_label],'ieeg',...
     ['sub-' sub_labels{i} '_ses-' ses_label '_task-' task_label ,'_run-*_ieeg.eeg']));
 
-dataFName = fullfile(D(1).folder, D(1).name);
+% if multiple files are available
+if size(D,1)>1
+    [index,tf] = listdlg('ListString',{D(:).name},'PromptString','Select file to analyze:',...
+        'ListSize',[500 300],'SelectionMode','single');
+    dataFName = fullfile(D(index).folder, D(index).name);
+else
+    dataFName = fullfile(D(1).folder, D(1).name);
+end
 
 ccep_dataraw = ft_read_data(dataFName,'dataformat','brainvision_eeg');
 
@@ -30,7 +37,11 @@ fs = ccep_header.Fs;
 D = dir(fullfile(dataPath,['sub-' sub_labels{i}],['ses-' ses_label],'ieeg',...
     ['sub-' sub_labels{i} '_ses-' ses_label '_task-' task_label ,'_run-*_events.tsv']));
 
-eventsFName = fullfile(D(1).folder, D(1).name);
+if size(D,1)>1
+    eventsFName = fullfile(D(index).folder, D(index).name);
+else
+    eventsFName = fullfile(D(1).folder, D(1).name);
+end
 
 tb_events = readtable(eventsFName,'FileType','text','Delimiter','\t');
 
@@ -38,7 +49,11 @@ tb_events = readtable(eventsFName,'FileType','text','Delimiter','\t');
 D = dir(fullfile(dataPath,['sub-' sub_labels{i}],['ses-' ses_label],'ieeg',...
     ['sub-' sub_labels{i} '_ses-' ses_label '_task-' task_label ,'_run-*_channels.tsv']));
 
-channelsFName = fullfile(D(1).folder, D(1).name);
+if size(D,1)>1
+    channelsFName = fullfile(D(index).folder, D(index).name);
+else
+    channelsFName = fullfile(D(1).folder, D(1).name);
+end
 
 tb_channels = readtable(channelsFName,'FileType','text','Delimiter','\t');
 % ch = tb_channels.name;
@@ -64,38 +79,146 @@ clearvars -except pat tb_events tb_channels
 all_stimcur = str2double(tb_events.electrical_stimulation_current)*1000;
 all_stimchans = tb_events.electrical_stimulation_site(~isnan(all_stimcur));
 all_stimcur = all_stimcur(~isnan(all_stimcur));
+sample_start = pat(1).sample_start;
 
 % convert stimulus pairs numbers to numbers without unnecessary channels
 stimelecnum = NaN(size(all_stimchans,1),2);
+remove_stim = [];
 for stimp =1:size(all_stimchans,1)
     stimsplit = strsplit(all_stimchans{stimp},'-');
     for elec = 1:size(stimsplit,2)
-       stimelecnum(stimp,elec) = find(strcmp(pat(1).ch,stimsplit{elec}));
+        try
+            stimelecnum(stimp,elec) = find(strcmp(pat(1).ch,stimsplit{elec}));
+        catch % if stimp elec is not in channel list (e.g. is bad channel)
+            remove_stim = [remove_stim, stimp];
+        end
     end
 end
+
+%remove stimpairs with bad channels
+% DORIEN CHECK: WIL IK ONDERSTAANDE??   
+all_stimchans(remove_stim)=[];
+all_stimcur(remove_stim) = [];
+stimelecnum(remove_stim,:) = [];
+sample_start(remove_stim) = [];
 
 % get the unique number of stimulated pairs:
  % use [sort(stimelecnum,2) allstimcur] if you do not want to differentiate direction (positive/negative) of stimulation; 
  % use [stimelecnum, allstimcur] if you want to differentiate positive and negative stimulation
-stimelecs = [stimelecnum, all_stimcur];
+p = input('Pos and Neg evaluation separate? [y/n] ','s');
+if strcmp(p,'y')
+    stimelecs = [stimelecnum, all_stimcur];
+else
+    stimelecs = [sort(stimelecnum,2) all_stimcur];
+end
 [cc_stimsets,IA,IC] = unique(stimelecs,'rows');
 
 % number of stimuli in each trial
 n = histcounts(IC,'BinMethod','integers');
 if any(diff(n) ~=0)
     disp('Not all stimulations have been repeated with the same number of stimuli')
+    % check stimpairs and manually remove stimpairs
+    avg_stims = round(mean(n));
+    disp(['Assumed number of stims per pair = ',num2str(avg_stims)]);
+    X = find(n~=avg_stims);
+    Xstimpnrs = cc_stimsets(X,1:2);
+    Xstimpname = pat(1).ch(Xstimpnrs);
+    XNstims = n(n~=avg_stims)';
+    disp('Check the following stimpairs: ');
+    T = table(Xstimpname, XNstims)
+    
+    x = input('Do you want to manually delete stimulations? [y/n] ','s');
+    
+    if strcmp(x,'y')
+        %create list of inaccurate stimpairs
+        L.stim=[];L.name=[];L.curr=[];
+        for i=1:length(X)
+            stim = find((stimelecs(:,1)==Xstimpnrs(i,1)) & (stimelecs(:,2)==Xstimpnrs(i,2)));
+            L.stim = [L.stim; stim];
+            name = repmat([Xstimpname(i,:)],XNstims(i),1);
+            L.name = [L.name; name];
+            L.curr = [L.curr; all_stimcur(stim)];
+        end
+        
+        %concatenate for list view
+        Lconc = [];
+        for i = 1:length(L.stim)
+            Lconc= [Lconc; string([num2str(L.stim(i)) '_' L.name{i,1:2} '_' num2str(L.curr(i)) 'mA'])];
+        end
+        
+        %list to manually select stimulations to keep
+        [index,tf]=listdlg('ListString',Lconc,'PromptString','Select stimulations to keep:',...
+            'ListSize',[200 500]);
+        if tf %only if user made a choice
+            P = 1:length(L.stim);
+            D = setdiff(P,index); %find index to exclude
+            remove_stim_extra = L.stim(D);
+            
+            %remove from lists
+            all_stimchans(remove_stim_extra)=[];
+            all_stimcur(remove_stim_extra) = [];
+            stimelecnum(remove_stim_extra,:) = [];
+            sample_start(remove_stim_extra) = [];
+            
+            %recompute summary list
+            % use [sort(stimelecnum,2) all_stimcur] if you do not want to differentiate direction (positive/negative) of stimulation;
+            % use [stimelecnum, all_stimcur] if you want to differentiate positive and negative stimulation
+            if strcmp(p,'y')
+                stimelecs = [stimelecnum, all_stimcur];
+            else
+                stimelecs = [sort(stimelecnum,2) all_stimcur];
+            end
+            [cc_stimsets,IA,IC] = unique(stimelecs,'rows');
+            
+            n = histcounts(IC,'BinMethod','integers');
+        end
+    end    
 end
 
 pat(1).all_stimchans = all_stimchans;
 pat(1).all_stimcur = all_stimcur;
 pat(1).cc_stimsets = cc_stimsets;
-pat(1).IC = IC;
 pat(1).stimnum_max = max(n);
+pat(1).sample_start = sample_start; % CHECK: wordt dit niet al eerder opgeslagen?
+pat(1).all_stimnrs = stimelecnum;
+pat(1).IC = IC;
 
 % remove all irrelevant variables
 clearvars -except pat tb_events tb_channels
 
-%% epoch files in 2spre-2spost stimulus 
+%% Manually select stimpairs to consider for detection 
+% TO DO: CHECK!!!
+% create list of stimpairs
+conc=[];
+stimpname = pat(1).ch(pat(1).cc_stimsets(:,1:2));
+for i=1:size(pat(1).cc_stimsets,1)
+conc = [conc; string([stimpname{i,1:2} '_' num2str(pat(1).cc_stimsets(i,3)) 'mA'])];
+end
+
+[index,tf]=listdlg('ListString',conc,'PromptString','Select stimulations to keep:',...
+    'ListSize',[200 500]);
+if tf %only if user made a choice
+    keep_stimsets = pat(1).cc_stimsets(index,:); %find stimpairs
+    
+    keep_stims = [];
+    for i=1:length(index) %find individual stims
+        keep_stims = [keep_stims; find((pat(1).all_stimnrs(:,1)==keep_stimsets(i,1)) & (pat(1).all_stimnrs(:,2)==keep_stimsets(i,2)))];
+    end
+    
+    %reduce patient variable
+    pat(1).all_stimchans = pat(1).all_stimchans(keep_stims);
+    pat(1).all_stimcur = pat(1).all_stimcur(keep_stims);
+    pat(1).cc_stimsets = keep_stimsets;
+    pat(1).sample_start = pat(1).sample_start(keep_stims);
+    pat(1).all_stimnrs = pat(1).all_stimnrs(keep_stims,:);
+    [~,~,IC] = unique(pat(1).all_stimnrs,'rows');
+    pat(1).IC = IC;
+end
+
+% remove all irrelevant variables
+clearvars -except pat tb_channels
+
+%% epoch files in 2spre-2spost stimulus
 epoch_length = 4; % in seconds, -2:2
 epoch_prestim = 2;
 fs = pat(1).fs;
@@ -105,7 +228,7 @@ tt = (1/fs:1/fs:epoch_length) - epoch_prestim;
 
 for elec = 1:size(pat(1).ch,1) % for all channels
     for ll = 1:size(pat(1).all_stimchans,1) % for all single stimulations
-        data_epoch(elec,ll,:) = pat(1).ccep_data(elec,pat(1).sample_start(ll)-round(epoch_prestim*fs)+1:pat(1).sample_start(ll)+round((epoch_length-epoch_prestim)*fs));                
+        data_epoch(elec,ll,:) = pat(1).ccep_data(elec,pat(1).sample_start(ll)-round(epoch_prestim*fs)+1:pat(1).sample_start(ll)+round((epoch_length-epoch_prestim)*fs));
     end
 end
 
