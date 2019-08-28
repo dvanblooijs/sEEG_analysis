@@ -11,7 +11,7 @@ ft_defaults
 %% load seeg with SPES from 1 patients
 
 dataPath = '/Fridge/CCEP';
-sub_labels = {'RESP0759'};
+sub_labels = {'RESP0788'};
 ses_label = '1';
 task_label = 'SPESclin';
 
@@ -109,8 +109,11 @@ sample_start(remove_stim) = [];
 p=input('Pos and Neg evaluation separate? [y/n] ','s');
 if strcmp(p,'y') 
     stimelecs = [stimelecnum, all_stimcur];
-else 
+else
     stimelecs = [sort(stimelecnum,2) all_stimcur];
+    for i=1:size(stimelecs,1)
+        all_stimchans{i} = strcat(pat.ch(stimelecs(i,1)), '-', pat.ch(stimelecs(i,2)));
+    end
 end
 [cc_stimsets,IA,IC] = unique(stimelecs,'rows');
 
@@ -183,7 +186,7 @@ pat(1).all_stimcur = all_stimcur;
 pat(1).cc_stimsets = cc_stimsets;
 pat(1).stimnum_max = max(n);
 pat(1).sample_start = sample_start;
-pat(1).all_stimnrs = stimelecnum;
+pat(1).all_stimnrs = stimelecs(:,1:2);
 pat(1).IC = IC;
 
 % remove all irrelevant variables
@@ -253,7 +256,7 @@ figure(1)
 plot(tt,squeeze(data_epoch(elec,trial,:)))
 xlabel('time(s)')
 ylabel('amplitude(uV)')
-title(sprintf('Electrode %s, stimulating %s, %d mA',ch_incl{elec},all_stimchans{trial},pat(1).all_stimcur(trial)))
+title(sprintf('Electrode %s, stimulating %s, %d mA',ch_incl{elec},string(all_stimchans{trial}),pat(1).all_stimcur(trial)))
 ylim([-1600 1600])
 
 clearvars -except pat tb_channels
@@ -283,8 +286,8 @@ clearvars -except pat tb_channels
 
 
 %% plot avg epoch
-trial = 4;
-elec = 35;
+trial = 1;
+elec = 11;
 
 epoch_sorted = pat(1).epoch_sorted;
 epoch_sorted_avg = pat(1).epoch_sorted_avg;
@@ -293,14 +296,14 @@ stimnames = pat(1).cc_stimchans;
 stimsets = pat(1).cc_stimsets;
 tt = pat(1).tt;
 
-figure(1),
+figure,
 plot(tt,squeeze(epoch_sorted(elec,:,trial,:)));
 hold on
 plot(tt,squeeze(epoch_sorted_avg(elec,trial,:)),'k','linewidth',2);
 hold off
 xlabel('time(s)')
 ylabel('amplitude(uV)')
-title(sprintf('Electrode %s, stimulating %s, %1.1f mA',ch{elec},stimnames{trial},stimsets(trial,3)))
+title(sprintf('Electrode %s, stimulating %s, %1.1f mA',ch{elec},string(stimnames{trial}),stimsets(trial,3)))
 ylim([-800 800])
 
 clearvars -except pat tb_channels
@@ -315,6 +318,7 @@ for trial=start_rating:stop_rating
     pat(1).visERs(trial) = visERs;
 end
 
+visERs = pat.visERs;
 % clearvars -except pat tb_channels
 
 
