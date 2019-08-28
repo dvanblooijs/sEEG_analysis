@@ -11,7 +11,11 @@ ft_defaults
 %% load seeg with SPES from 1 patients
 
 dataPath = '/Fridge/CCEP';
+<<<<<<< HEAD
+sub_labels = {'RESP0788'};
+=======
 sub_labels = {'RESP0759'};
+>>>>>>> c6407d713edd2a8ff7cccc6a7141b3ead524749f
 ses_label = '1';
 task_label = 'SPESclin';
 
@@ -54,6 +58,71 @@ if size(D,1)>1
 else
     channelsFName = fullfile(D(1).folder, D(1).name);
 end
+<<<<<<< HEAD
+
+tb_channels = readtable(channelsFName,'FileType','text','Delimiter','\t');
+% ch = tb_channels.name;
+
+% remove all unnecessary electrodes
+log_ch_incl = strcmp(tb_channels.status_description,'included');
+ch_incl = tb_channels.name(log_ch_incl);
+
+ccep_data = -1*ccep_dataraw(log_ch_incl,:); %*-1 because that's how the ECoG is displayed and visualized
+% put all information to use in one struct called "pat"
+pat(i).dataFName = dataFName;
+pat(i).RESPnum = sub_labels{:};
+pat(i).ch = ch_incl;
+pat(i).fs = fs;
+pat(i).ccep_data = ccep_data;
+pat(i).sample_start = tb_events.sample_start(strcmp(tb_events.sub_type,'SPES')==1);
+
+% remove all irrelevant variables
+clearvars -except pat tb_events tb_channels
+
+%% find unique stimulation pairs and stimulus current
+% including option to manually exclude stimulations with different number
+% of repetitions
+
+all_stimcur = str2double(tb_events.electrical_stimulation_current)*1000;
+all_stimchans = tb_events.electrical_stimulation_site(~isnan(all_stimcur));
+all_stimcur = all_stimcur(~isnan(all_stimcur));
+sample_start = pat(1).sample_start;
+
+% convert stimulus pairs numbers to numbers without unnecessary channels
+stimelecnum = NaN(size(all_stimchans,1),2);
+remove_stim = [];
+for stimp =1:size(all_stimchans,1)
+    stimsplit = strsplit(all_stimchans{stimp},'-');
+    for elec = 1:size(stimsplit,2)
+        try
+            stimelecnum(stimp,elec) = find(strcmp(pat(1).ch,stimsplit{elec}));
+        catch % if stimp elec is not in channel list (e.g. is bad channel)
+            remove_stim = [remove_stim, stimp];
+        end
+    end
+end
+
+%remove stimpairs with bad channels
+all_stimchans(remove_stim)=[];
+all_stimcur(remove_stim) = [];
+stimelecnum(remove_stim,:) = [];
+sample_start(remove_stim) = [];
+
+% get the unique number of stimulated pairs:
+ % use [sort(stimelecnum,2) all_stimcur] if you do not want to differentiate direction (positive/negative) of stimulation; 
+ % use [stimelecnum, all_stimcur] if you want to differentiate positive and negative stimulation
+p=input('Pos and Neg evaluation separate? [y/n] ','s');
+if strcmp(p,'y') 
+    stimelecs = [stimelecnum, all_stimcur];
+else
+    stimelecs = [sort(stimelecnum,2) all_stimcur];
+    for i=1:size(stimelecs,1)
+        all_stimchans{i} = strcat(pat.ch(stimelecs(i,1)), '-', pat.ch(stimelecs(i,2)));
+    end
+end
+[cc_stimsets,IA,IC] = unique(stimelecs,'rows');
+
+=======
 
 tb_channels = readtable(channelsFName,'FileType','text','Delimiter','\t');
 % ch = tb_channels.name;
@@ -114,6 +183,7 @@ else
 end
 [cc_stimsets,IA,IC] = unique(stimelecs,'rows');
 
+>>>>>>> c6407d713edd2a8ff7cccc6a7141b3ead524749f
 % number of stimuli in each trial
 n = histcounts(IC,'BinMethod','integers');
 
@@ -183,7 +253,11 @@ pat(1).all_stimcur = all_stimcur;
 pat(1).cc_stimsets = cc_stimsets;
 pat(1).stimnum_max = max(n);
 pat(1).sample_start = sample_start;
+<<<<<<< HEAD
+pat(1).all_stimnrs = stimelecs(:,1:2);
+=======
 pat(1).all_stimnrs = stimelecnum;
+>>>>>>> c6407d713edd2a8ff7cccc6a7141b3ead524749f
 pat(1).IC = IC;
 
 % remove all irrelevant variables
@@ -283,6 +357,19 @@ clearvars -except pat tb_channels
 
 
 %% plot avg epoch
+<<<<<<< HEAD
+trial = 1;
+elec = 11;
+
+epoch_sorted = pat(1).epoch_sorted;
+epoch_sorted_avg = pat(1).epoch_sorted_avg;
+ch = pat(1).ch;
+stimnames = pat(1).cc_stimchans;
+stimsets = pat(1).cc_stimsets;
+tt = pat(1).tt;
+
+figure,
+=======
 trial = 4;
 elec = 35;
 
@@ -294,13 +381,18 @@ stimsets = pat(1).cc_stimsets;
 tt = pat(1).tt;
 
 figure(1),
+>>>>>>> c6407d713edd2a8ff7cccc6a7141b3ead524749f
 plot(tt,squeeze(epoch_sorted(elec,:,trial,:)));
 hold on
 plot(tt,squeeze(epoch_sorted_avg(elec,trial,:)),'k','linewidth',2);
 hold off
 xlabel('time(s)')
 ylabel('amplitude(uV)')
+<<<<<<< HEAD
+title(sprintf('Electrode %s, stimulating %s, %1.1f mA',ch{elec},string(stimnames{trial}),stimsets(trial,3)))
+=======
 title(sprintf('Electrode %s, stimulating %s, %1.1f mA',ch{elec},stimnames{trial},stimsets(trial,3)))
+>>>>>>> c6407d713edd2a8ff7cccc6a7141b3ead524749f
 ylim([-800 800])
 
 clearvars -except pat tb_channels
@@ -315,6 +407,10 @@ for trial=start_rating:stop_rating
     pat(1).visERs(trial) = visERs;
 end
 
+<<<<<<< HEAD
+visERs = pat.visERs;
+=======
+>>>>>>> c6407d713edd2a8ff7cccc6a7141b3ead524749f
 % clearvars -except pat tb_channels
 
 
