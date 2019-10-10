@@ -8,15 +8,28 @@
 % after you finishes each part.
 
 
-function ERs = rate_visERssEEG(pat,trial)
+function ERs = rate_visERssEEG(pat,cfg,trial)
 
 tt = pat(1).tt;
-epoch_sorted = pat(1).epoch_sorted;
-epoch_sorted_avg = pat(1).epoch_sorted_avg;
+if strcmp(cfg.select,'yes')
+    epoch_sorted = pat(1).select_epoch_sorted;
+    epoch_sorted_avg = pat(1).select_epoch_sorted_avg;
+    cc_stimsets = pat(1).select_stimsets;
+    cc_stimchans = pat(1).select_stimchans;
+else
+    epoch_sorted = pat(1).cc_epoch_sorted;
+    epoch_sorted_avg = pat(1).cc_epoch_sorted_avg;
+    cc_stimsets = pat(1).cc_stimsets;
+    cc_stimchans = pat(1).cc_stimchans;
+end
+
 ch = pat(1).ch;
-cc_stimsets = pat(1).cc_stimsets;
-cc_stimchans = pat(1).cc_stimchans;
-stimcur = pat(1).cc_stimsets(:,3);
+
+if strcmp(cfg.amp,'yes')
+    stimcur = pat(1).cc_stimsets(:,3);
+else
+    stimcur = NaN(size(pat(1).cc_stimsets,1),1);
+end
 
 ERs = struct;
 % for each stimulus
@@ -38,7 +51,7 @@ for elec =1:size(epoch_sorted_avg,1)
         ylim([-2000 2000])
         xlabel('time(s)')
         ylabel('amplitude(uV)')
-        title(sprintf('Electrode %s, stimulating %s, %1.1f mA',ch{elec},cc_stimchans{trial},stimcur(trial)))
+        title(sprintf('Electrode %s, stimulating %s-%s, %1.1f mA',ch{elec},cc_stimchans{trial,:},stimcur(trial)))
         
         subplot(1,2,2)
         plot(tt,squeeze(epoch_sorted(elec,:,trial,:)),'r');
@@ -58,7 +71,9 @@ for elec =1:size(epoch_sorted_avg,1)
 end
 ERs.stimpair = cc_stimsets(trial,1:2);
 ERs.vis = ER;
-ERs.stimcur = cc_stimsets(trial,3);
+if strcmp(cfg.amp,'yes')
+    ERs.stimcur = cc_stimsets(trial,3);
+end
 
 end
 

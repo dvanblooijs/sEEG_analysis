@@ -4,12 +4,12 @@
 % this function detects early responses after Single Pulse Electrical Stimulation
 % this function should be adapted to be used in sEEG
 
-function ERs = detectERssEEG(pat)
+function ERs = detectERssEEG(pat,cfg)
 
-epoch_sorted_avg = pat(1).epoch_sorted_avg;
+epoch_sorted_avg = pat(1).cc_epoch_sorted_avg;
 cc_stimsets = pat(1).cc_stimsets;
-fs = pat(1).fs;
-epoch_prestim = pat(1).epoch_prestim;
+fs = pat(1).ccep_header.Fs;
+epoch_prestim = cfg.epoch_prestim;
 
 % pre-allocation: variables determined in my thesis
 thresh = 2.5;
@@ -121,7 +121,9 @@ for trial = 1:size(epoch_sorted_avg,2)
     end
     
     ERs(trial).stimpair = cc_stimsets(trial,1:2);
-    ERs(trial).stimcur = cc_stimsets(trial,3);
+    if strcmp(cfg.amp,'yes')
+        ERs(trial).stimcur = cc_stimsets(trial,3);
+    end
     ERs(trial).detERs = detERs; % ERs for all stimulation pairs
     
 end
